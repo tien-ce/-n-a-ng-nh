@@ -1,5 +1,6 @@
 #ifndef TASK_H
 #define TASK_H
+#include "config.h"
 #include <Arduino.h>
 #include <DHT.h>
 #include <DHT_U.h>
@@ -10,137 +11,199 @@
 #include "DHT20.h"
 #include <ArduinoOTA.h>
 #include <RTOS_Task.h>
-
+#include "LiquidCrystal_I2C.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "OTA_Update_Callback.h"
+#include "OTA_Handler.h"
+#include <Espressif_Updater.h>
 /*--------------------Define--------------------------------------*/
-#define Dht20 0 
+#define Dht20 0
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+extern LiquidCrystal_I2C lcd;
 /*------------------------Macro-----------------------------------*/
-#define setVal(name_val)\
+#define setVal(name_val) \
     this->name_val = name_val
 #define CreateTask(Task, name_task, stack, Pin, Delay, other) \
-    Parameter pm_##Task(Pin, Delay, other); \
-    xTaskCreate(Task, #name_task, stack, (void*) &pm_##Task, 2, NULL);
-/*-------------------------Struct-----------------------------------*/    
-struct LIGHT_VAL{
+    Parameter pm_##Task(Pin, Delay, other);                   \
+    xTaskCreate(Task, #name_task, stack, (void *)&pm_##Task, 2, NULL);
+/*-------------------------Struct-----------------------------------*/
+struct LIGHT_VAL
+{
     int light;
 };
-struct SOID_VAL{
-    int soid;
+
+struct SOIL_VAL
+{
+    int soil;
 };
-struct DHT_VAL{
+struct DHT_VAL
+{
     uint8_t DHT_type;
     float temperature;
     float humidity;
-    DHT_VAL(uint8_t DHT_type){
-        this-> DHT_type = DHT_type; 
+    DHT_VAL(uint8_t DHT_type)
+    {
+        this->DHT_type = DHT_type;
         this->temperature = 0;
         this->humidity = 0;
     }
 };
-struct ThingsBoard_VAL{
+struct LCD_VAL{
     DHT_VAL* dht;
-    LIGHT_VAL* light_val;
-    SOID_VAL* soid_val;
-    const char* WIFI_SSID;
-    const char* WIFI_PASSWORD;
-    const char* THINGSBOARD_SERVER;
-    const char* TOKEN;
-    const char* ID;
-    const char* password;
+    size_t* currentChunk;
+    size_t* totalChuncks;
+};
+struct OLED_VAL{
+    DHT_VAL* dht;
+    SOIL_VAL* soil_val;
+};
+struct ThingsBoard_VAL
+{
+    DHT_VAL *dht;
+    LIGHT_VAL *light_val;
+    SOIL_VAL *soil_val;
+    const char *WIFI_SSID;
+    const char *WIFI_PASSWORD;
+    const char *THINGSBOARD_SERVER;
+    const char *TOKEN;
     uint16_t THINGSBOARD_PORT;
-    
-    ThingsBoard_VAL(DHT_VAL* dht,LIGHT_VAL* light,SOID_VAL* soid_val,const char* WIFI_SSID,const char* WIFI_PASSWORD,
-        const char* THINGSBOARD_SERVER,const char* TOKEN,uint16_t THINGSBOARD_PORT  ,const char* ID,const char* password){
+
+    ThingsBoard_VAL(DHT_VAL *dht, LIGHT_VAL *light, SOIL_VAL *soil_val, const char *WIFI_SSID, const char *WIFI_PASSWORD,
+                    const char *THINGSBOARD_SERVER, const char *TOKEN, uint16_t THINGSBOARD_PORT)
+    {
         this->dht = dht;
         this->light_val = light;
-        setVal(soid_val);
+        setVal(soil_val);
         this->WIFI_SSID = WIFI_SSID;
         this->WIFI_PASSWORD = WIFI_PASSWORD;
         setVal(TOKEN);
         setVal(THINGSBOARD_SERVER);
         setVal(THINGSBOARD_PORT);
-        setVal(ID);
-        setVal(password);
     }
 };
-struct Uart_VAL{
-    DHT_VAL * dht_val;
-    LIGHT_VAL* light_val;
-    Uart_VAL(DHT_VAL *dht_val,LIGHT_VAL* light_val){
+struct Uart_VAL
+{
+    DHT_VAL *dht_val;
+    LIGHT_VAL *light_val;
+    Uart_VAL(DHT_VAL *dht_val, LIGHT_VAL *light_val)
+    {
         this->dht_val = dht_val;
         this->light_val = light_val;
     }
 };
 
-class Parameter{
-    private:
-        uint8_t Pin;
-        uint32_t Task_Delay;
-    public:
-        void* other;
-        Parameter(uint8_t Pin = 255,uint32_t delay = 1000,void* other = NULL){
-            this->Pin = Pin;
-            this->Task_Delay = delay;
-            this->other = other;
-        }
-        uint8_t get_Pin(){
-            return this->Pin;
-        }
-        uint32_t get_Delay(){
-            return this->Task_Delay;
-        }
+class Parameter
+{
+private:
+    uint8_t Pin;
+    uint32_t Task_Delay;
+
+public:
+    void *other;
+    Parameter(uint8_t Pin = 255, uint32_t delay = 1000, void *other = NULL)
+    {
+        this->Pin = Pin;
+        this->Task_Delay = delay;
+        this->other = other;
+    }
+    uint8_t get_Pin()
+    {
+        return this->Pin;
+    }
+    uint32_t get_Delay()
+    {
+        return this->Task_Delay;
+    }
 };
 /*-----------------------CallBack------------------------*/
-class CallBack {
-    private:
-        std::vector<const char*> SHARED_ATTRIBUTES_LIST; // Danh sách thuộc tính chia sẻ
-        std::vector<RPC_Callback> RPC_LIST; // Danh sách RPC
-        std::function<void(const Shared_Attribute_Data&)> Shared_callback;
-        // Đăng kí RPC
-        friend void SubscribeRPC(CallBack& callback);
-    public:
-        // Constructor
-        CallBack(std::vector<const char*> shared_attributes = {}, std::vector<RPC_Callback> rpc_list = {});
+class CallBack
+{
+private:
+    std::vector<const char *> SHARED_ATTRIBUTES_LIST; // Danh sách thuộc tính chia sẻ
+    std::vector<RPC_Callback> RPC_LIST;               // Danh sách RPC
+    std::function<bool(const Shared_Attribute_Data &)> Shared_callback;
+    // Đăng kí RPC
+    friend void SubscribeRPC(CallBack &callback);
 
-        // Thêm một thuộc tính chia sẻ
-        void Add_Shared_Attribute(const char* shared_attribute);
-        // Khởi tạo hàm CallBack cho các thuộc tính chia sẻ
-        void Shared_Attribute_Begin(std::function<void(const Shared_Attribute_Data&)> Shared_callback);
-        // Thêm một RPC mới
-        void Add_RPC(const char* rpc_name, std::function<RPC_Response(const RPC_Data&)> rpc_response);
-        // In danh sách thuộc tính và RPC đã đăng ký
-        void Print_List();
+public:
+    std::function<void(const size_t &, const size_t & )> progess_ota_callback;
+    std::function<void(const bool&)> updated_ota_callback;
+    // Constructor
+    CallBack(std::vector<const char *> shared_attributes = {}, std::vector<RPC_Callback> rpc_list = {});
+    void subcribe_OTA_Update(std::function<void(const size_t &, const size_t & )> progress_ota_callback,std::function<void(const bool&)> updated_ota_callback);
+    // Thêm một thuộc tính chia sẻ
+    void Add_Shared_Attribute(const char *shared_attribute);
+    // Khởi tạo hàm CallBack cho các thuộc tính chia sẻ
+    void Shared_Attribute_Begin(std::function<bool(const Shared_Attribute_Data &)> Shared_callback);
+    // Thêm một RPC mới
+    void Add_RPC(const char *rpc_name, std::function<RPC_Response(const RPC_Data &)> rpc_response);
+    // In danh sách thuộc tính và RPC đã đăng ký
+    void Print_List();
 };
-extern CallBack callback;
 /*------------------------Task-------------------------------*/
-class ManagerTask{
+class ManagerTask
+{
+private:
+    struct Task
+    {
     private:
-    struct Task{
-        private:
-            void(*func) (void*);
-            const char* nameTask;
-            uint32_t Stack;
-            Parameter pm;
-            friend class ManagerTask;
-        public:
-            Task(void(*func) (void*),const char* nameTask,uint32_t Stack,Parameter pm){
-                setVal(func);
-                setVal(nameTask);
-                setVal(Stack);
-                setVal(pm);
-            }
-    };
-    std::vector<Task> TaskList;        
+        void (*func)(void *);
+        const char *nameTask;
+        uint32_t Stack;
+        Parameter pm;
+        friend class ManagerTask;
+
     public:
-        void addTask(void(*func) (void*),const char* nameTask,uint32_t Delay,uint8_t Pin,uint32_t Stack,void* other);
-        void printTaskList();
-        void beginTask();    
+        Task(void (*func)(void *), const char *nameTask, uint32_t Stack, Parameter pm)
+        {
+            setVal(func);
+            setVal(nameTask);
+            setVal(Stack);
+            setVal(pm);
+        }
+    };
+    std::vector<Task> TaskList;
+
+public:
+    void addTask(void (*func)(void *), const char *nameTask, uint32_t Stack, uint8_t Pin, uint32_t Delay, void *other = NULL);
+    void printTaskList();
+    void beginTask();
 };
+#ifdef TASK_LIGHT
+void TaskLight(void *pvParameters);
+#endif
+
+#ifdef TASK_SOIL
+void Tasksoil(void *pvParameters);
+#endif
+
+#ifdef TASK_BLINKY
+void TaskBlinky(void *pvParameters);
+#endif
+
+#ifdef TASK_DHT
+void TaskDht(void *pvParameters);
+#endif
+
+#ifdef TASK_TRANSMIT_UART
+void TaskTransmitUart(void *pvParameters);
+#endif
+
+#ifdef TASK_RECEIVE_UART
+void TaskReceiveUart(void *pvParameters);
+#endif
+#ifdef TASK_LCD
+void TaskLCD(void* pvParametes);
+#endif
+#ifdef TASK_OLED
+void TaskOled(void *pvParameters);
+#endif
+void TaskPublishDataToThingsboard(void *pvParameters);
+/*-------------------------------------Extern------------------------------------*/
+extern ThingsBoard tb;
 extern ManagerTask task;
-void TaskLight(void* pvParameters);
-void TaskSoid(void* pvParameters);
-void TaskBlinky(void* pvParameters);
-void TaskDht(void* pvParameters);
-void TaskTransmitUart(void* pvParameters);
-void TaskReceiveUart(void* pvParameters);
-void TaskPublishDataToThingsboard(void* pvParameters);
+extern CallBack callback;
 #endif
